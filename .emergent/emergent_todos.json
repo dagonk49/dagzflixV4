@@ -1,22 +1,30 @@
 [
   {
-    "content": "Créer la page Onboarding avec questionnaire de goûts (genres favoris, genres détestés, préférences)",
+    "content": "Implémenter le chiffrement AES-256-GCM pour les données sensibles (API keys, tokens)",
+    "status": "completed"
+  },
+  {
+    "content": "Ajouter la cryptographie post-quantique (CRYSTALS-Kyber + Dilithium)",
+    "status": "completed"
+  },
+  {
+    "content": "Implémenter rate limiting & protection CSRF/XSS",
+    "status": "completed"
+  },
+  {
+    "content": "Ajouter Content Security Policy & headers de sécurité",
+    "status": "completed"
+  },
+  {
+    "content": "Implémenter système d'audit de sécurité & logs",
+    "status": "completed"
+  },
+  {
+    "content": "Configurer sessions sécurisées avec rotation automatique",
+    "status": "completed"
+  },
+  {
+    "content": "Tester l'application complète avec sécurité activée",
     "status": "in_progress"
-  },
-  {
-    "content": "Créer le composant Rating (système d'étoiles pour noter les films/séries)",
-    "status": "pending"
-  },
-  {
-    "content": "Améliorer l'algorithme DagzRank backend pour qu'il soit ultra-performant",
-    "status": "pending"
-  },
-  {
-    "content": "Intégrer les ratings dans MediaDetail et le player",
-    "status": "pending"
-  },
-  {
-    "content": "Tester le système complet avec utilisateur 'test' (sans mdp)",
-    "status": "pending"
   }
 ]

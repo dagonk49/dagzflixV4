@@ -1,13 +1,18 @@
-from fastapi import FastAPI, APIRouter, Request, Response, Cookie
+from fastapi import FastAPI, APIRouter, Request, Response, Cookie, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 from pathlib import Path
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import os, uuid, logging, httpx, asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Any, Dict
 from pydantic import BaseModel
+from security import security, encrypt_api_key, decrypt_api_key, create_secure_session
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -21,11 +26,17 @@ _client   = AsyncIOMotorClient(mongo_url)
 db        = _client[db_name]
 
 # ─────────────────────────────────────────────────────────────────────────────
-# FastAPI App
+# FastAPI App with Security
 # ─────────────────────────────────────────────────────────────────────────────
 app        = FastAPI(title='DagzFlix API')
 api_router = APIRouter(prefix='/api')
 
+# Rate Limiter (Protection DDoS)
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
@@ -34,6 +45,36 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
+# Security Headers Middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    
+    # Headers de sécurité ultra-stricts
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
+    
+    # Content Security Policy (CSP) strict
+    csp = '; '.join([
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'",  # React needs unsafe-eval
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' https://fonts.gstatic.com",
+        "img-src 'self' data: https: blob:",
+        "media-src 'self' blob: https:",
+        "connect-src 'self' https:",
+        "frame-ancestors 'none'",
+        "base-uri 'self'",
+        "form-action 'self'"
+    ])
+    response.headers['Content-Security-Policy'] = csp
+    
+    return response
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -41,7 +82,18 @@ logger = logging.getLogger(__name__)
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 async def get_config():
-    return await db['config'].find_one({'_id': 'main'})
+    config = await db['config'].find_one({'_id': 'main'})
+    if config:
+        # Déchiffrement des API keys
+        if config.get('jellyfinApiKey'):
+            config['jellyfinApiKey'] = decrypt_api_key(config['jellyfinApiKey'])
+        if config.get('jellyseerrApiKey'):
+            config['jellyseerrApiKey'] = decrypt_api_key(config['jellyseerrApiKey'])
+        if config.get('radarrApiKey'):
+            config['radarrApiKey'] = decrypt_api_key(config['radarrApiKey'])
+        if config.get('sonarrApiKey'):
+            config['sonarrApiKey'] = decrypt_api_key(config['sonarrApiKey'])
+    return config
 
 async def get_session(request: Request):
     session_id = request.cookies.get('dagzflix_session')
@@ -53,6 +105,11 @@ async def get_session(request: Request):
     if session.get('expiresAt') and session['expiresAt'] < datetime.now(timezone.utc):
         await db['sessions'].delete_one({'_id': session_id})
         return None
+    
+    # Déchiffrement du token Jellyfin
+    if session.get('jellyfinToken'):
+        session['jellyfinToken'] = decrypt_api_key(session['jellyfinToken'])
+    
     return session
 
 def set_cookie(response: Response, name: str, value: str, max_age: int = 0):
@@ -402,24 +459,41 @@ class SetupSaveBody(BaseModel):
     sonarrApiKey: str = ''
 
 @api_router.post('/setup/save')
-async def setup_save(body: SetupSaveBody):
+@limiter.limit("5/minute")
+async def setup_save(body: SetupSaveBody, request: Request):
+    # Chiffrement des API keys avant stockage
+    encrypted_jellyfin_key = encrypt_api_key(body.jellyfinApiKey) if body.jellyfinApiKey else ''
+    encrypted_jellyseerr_key = encrypt_api_key(body.jellyseerrApiKey) if body.jellyseerrApiKey else ''
+    encrypted_radarr_key = encrypt_api_key(body.radarrApiKey) if body.radarrApiKey else ''
+    encrypted_sonarr_key = encrypt_api_key(body.sonarrApiKey) if body.sonarrApiKey else ''
+    
     await db['config'].update_one(
         {'_id': 'main'},
         {'$set': {
             'jellyfinUrl':      body.jellyfinUrl.rstrip('/'),
-            'jellyfinApiKey':   body.jellyfinApiKey,
+            'jellyfinApiKey':   encrypted_jellyfin_key,
             'jellyseerrUrl':    body.jellyseerrUrl.rstrip('/') if body.jellyseerrUrl else '',
-            'jellyseerrApiKey': body.jellyseerrApiKey,
+            'jellyseerrApiKey': encrypted_jellyseerr_key,
             'radarrUrl':        body.radarrUrl.rstrip('/') if body.radarrUrl else '',
-            'radarrApiKey':     body.radarrApiKey,
+            'radarrApiKey':     encrypted_radarr_key,
             'sonarrUrl':        body.sonarrUrl.rstrip('/') if body.sonarrUrl else '',
-            'sonarrApiKey':     body.sonarrApiKey,
+            'sonarrApiKey':     encrypted_sonarr_key,
             'setupComplete':    True,
             'updatedAt':        datetime.now(timezone.utc),
         }},
         upsert=True
     )
-    return {'success': True, 'message': 'Configuration sauvegardée'}
+    
+    # Log sécurité
+    security.log_security_event(
+        'SETUP_SAVE',
+        'system',
+        {'ip': request.client.host, 'jellyfin_configured': bool(body.jellyfinUrl)},
+        severity='INFO',
+        ip_address=request.client.host
+    )
+    
+    return {'success': True, 'message': 'Configuration sauvegardée avec chiffrement AES-256-GCM'}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Auth
@@ -429,10 +503,14 @@ class LoginBody(BaseModel):
     password: str
 
 @api_router.post('/auth/login')
-async def auth_login(body: LoginBody, response: Response):
+@limiter.limit("5/minute")
+async def auth_login(body: LoginBody, response: Response, request: Request):
     config = await get_config()
     if not config or not config.get('jellyfinUrl'):
         return JSONResponse({'success': False, 'error': 'Serveur non configuré'}, 400)
+    
+    ip_address = request.client.host
+    
     try:
         auth_header = 'MediaBrowser Client="DagzFlix", Device="Web", DeviceId="dagzflix-web", Version="1.0"'
         async with httpx.AsyncClient(timeout=30) as client:
@@ -441,8 +519,18 @@ async def auth_login(body: LoginBody, response: Response):
                 json={'Username': body.username, 'Pw': body.password},
                 headers={'Content-Type': 'application/json', 'X-Emby-Authorization': auth_header}
             )
+        
         if r.status_code == 401 or r.status_code == 403:
+            # Log tentative échouée
+            security.log_security_event(
+                'LOGIN_FAILED',
+                body.username,
+                {'ip': ip_address, 'reason': 'Invalid credentials'},
+                severity='WARNING',
+                ip_address=ip_address
+            )
             return JSONResponse({'success': False, 'error': 'Identifiants incorrects'}, 401)
+        
         if not r.is_success:
             return JSONResponse({'success': False, 'error': f'Erreur serveur {r.status_code}'}, 502)
 
@@ -451,33 +539,71 @@ async def auth_login(body: LoginBody, response: Response):
         access_token = auth_data['AccessToken']
         display_name = auth_data['User'].get('Name', body.username)
 
-        session_id = str(uuid.uuid4())
+        # Création session sécurisée
+        session_data = create_secure_session(user_id, {'ip': ip_address, 'user_agent': request.headers.get('user-agent', '')})
+        
         expires_at = datetime.now(timezone.utc) + timedelta(days=7)
         await db['sessions'].insert_one({
-            '_id': session_id, 'userId': user_id, 'jellyfinToken': access_token,
-            'jellyfinUserId': user_id, 'username': display_name,
-            'createdAt': datetime.now(timezone.utc), 'expiresAt': expires_at,
+            '_id': session_data['session_id'],
+            'userId': user_id,
+            'jellyfinToken': encrypt_api_key(access_token),  # Chiffrement du token
+            'jellyfinUserId': user_id,
+            'username': display_name,
+            'ipAddress': ip_address,
+            'userAgent': request.headers.get('user-agent', ''),
+            'csrfToken': session_data['csrf_token'],
+            'createdAt': datetime.now(timezone.utc),
+            'expiresAt': expires_at,
         })
+        
         await db['users'].update_one(
             {'userId': user_id},
             {'$setOnInsert': {'userId': user_id, 'username': display_name, 'role': 'adult',
                               'maxRating': '', 'createdAt': datetime.now(timezone.utc)},
-             '$set': {'lastLogin': datetime.now(timezone.utc)}},
+             '$set': {'lastLogin': datetime.now(timezone.utc), 'lastIp': ip_address}},
             upsert=True
         )
+        
         user_profile = await db['users'].find_one({'userId': user_id})
         prefs        = await db['preferences'].find_one({'userId': user_id})
+
+        # Log succès
+        security.log_security_event(
+            'LOGIN_SUCCESS',
+            user_id,
+            {'ip': ip_address, 'username': display_name},
+            severity='INFO',
+            ip_address=ip_address
+        )
 
         data = JSONResponse({
             'success': True,
             'user': {'id': user_id, 'name': display_name, 'role': (user_profile or {}).get('role', 'adult')},
             'onboardingComplete': bool(prefs and prefs.get('onboardingComplete')),
         })
-        data.set_cookie('dagzflix_session', session_id, max_age=7*24*3600,
-                        httponly=True, samesite='lax', path='/')
+        
+        # Cookie sécurisé HttpOnly avec SameSite
+        data.set_cookie(
+            'dagzflix_session',
+            session_data['session_id'],
+            max_age=7*24*3600,
+            httponly=True,
+            secure=True,  # HTTPS only
+            samesite='strict',
+            path='/'
+        )
+        
         return data
+        
     except Exception as e:
         logger.error(f'Login error: {e}')
+        security.log_security_event(
+            'LOGIN_ERROR',
+            body.username,
+            {'ip': ip_address, 'error': str(e)},
+            severity='ERROR',
+            ip_address=ip_address
+        )
         return JSONResponse({'success': False, 'error': str(e)}, 500)
 
 @api_router.post('/auth/logout')
