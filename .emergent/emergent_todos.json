@@ -1,0 +1,22 @@
+[
+  {
+    "content": "Phase 1: Backend FastAPI - Setup, Auth, Media Stream endpoints (Direct Play + HLS + French auto-select)",
+    "status": "in_progress"
+  },
+  {
+    "content": "Phase 1: Frontend React - Port all components, pages, contexts",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 1: Enhanced VideoPlayer - Direct Play, French language, WebVTT subtitles",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: Radarr/Sonarr integration in Setup + Media Detail",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: End-to-end testing with testing agent",
+    "status": "pending"
+  }
+]
