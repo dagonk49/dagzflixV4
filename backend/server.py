@@ -1374,6 +1374,8 @@ async def media_favorites(request: Request):
 class PreferencesSaveBody(BaseModel):
     favoriteGenres: Optional[List[str]] = []
     dislikedGenres: Optional[List[str]] = []
+    preferredType: Optional[str] = ''
+    onboardingComplete: Optional[bool] = False
 
 @api_router.get('/preferences')
 async def preferences_get(request: Request):
@@ -1383,7 +1385,7 @@ async def preferences_get(request: Request):
     prefs = await db['preferences'].find_one({'userId': session['userId']})
     return {'preferences': {k: v for k, v in (prefs or {}).items() if k != '_id'} if prefs else {}}
 
-@api_router.post('/preferences')
+@api_router.post('/preferences/save')
 async def preferences_save(body: PreferencesSaveBody, request: Request):
     session = await get_session(request)
     if not session:
@@ -1391,7 +1393,8 @@ async def preferences_save(body: PreferencesSaveBody, request: Request):
     await db['preferences'].update_one(
         {'userId': session['userId']},
         {'$set': {'userId': session['userId'], 'favoriteGenres': body.favoriteGenres,
-                  'dislikedGenres': body.dislikedGenres, 'onboardingComplete': True,
+                  'dislikedGenres': body.dislikedGenres, 'preferredType': body.preferredType or '',
+                  'onboardingComplete': body.onboardingComplete,
                   'updatedAt': datetime.now(timezone.utc)}},
         upsert=True
     )

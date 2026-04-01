@@ -1,53 +1,138 @@
-import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './lib/dagzflix';
+import { PlayerProvider } from './lib/dagzflix';
+import { Toaster } from './components/ui/sonner';
+import './App.css';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+// Pages
+import SetupPage from './pages/SetupPage';
+import LoginPage from './pages/LoginPage';
+import OnboardingPage from './pages/OnboardingPage';
+import HomePage from './pages/HomePage';
+import MoviesPage from './pages/MoviesPage';
+import SeriesPage from './pages/SeriesPage';
+import SearchPage from './pages/SearchPage';
+import MediaDetailPage from './pages/MediaDetailPage';
+import FavoritesPage from './pages/FavoritesPage';
+import ProfilePage from './pages/ProfilePage';
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
+// Route guard component
+function ProtectedRoute({ children }) {
+  const { status } = useAuth();
 
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
+  if (status === 'loading') {
+    return (
+      <div data-testid="app-loading" className="flex items-center justify-center min-h-screen bg-[color:var(--bg)]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-[color:var(--accent)] border-t-transparent rounded-full animate-spin" />
+          <p className="text-[color:var(--fg-muted)]">Chargement...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === 'setup') {
+    return <Navigate to="/setup" replace />;
+  }
+
+  if (status === 'login') {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (status === 'onboarding') {
+    return <Navigate to="/onboarding" replace />;
+  }
+
+  return children;
+}
+
+function AppRoutes() {
+  const { status } = useAuth();
 
   return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
+    <Routes>
+      {/* Public routes */}
+      <Route path="/setup" element={<SetupPage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/onboarding" element={<OnboardingPage />} />
+
+      {/* Protected routes */}
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <HomePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/movies"
+        element={
+          <ProtectedRoute>
+            <MoviesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/series"
+        element={
+          <ProtectedRoute>
+            <SeriesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/search"
+        element={
+          <ProtectedRoute>
+            <SearchPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/media/:id"
+        element={
+          <ProtectedRoute>
+            <MediaDetailPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/favorites"
+        element={
+          <ProtectedRoute>
+            <FavoritesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/profile"
+        element={
+          <ProtectedRoute>
+            <ProfilePage />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Fallback */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
-};
+}
 
 function App() {
   return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
+    <AuthProvider>
+      <PlayerProvider>
+        <BrowserRouter>
+          <div className="App">
+            <AppRoutes />
+            <Toaster position="top-right" richColors />
+          </div>
+        </BrowserRouter>
+      </PlayerProvider>
+    </AuthProvider>
   );
 }
 

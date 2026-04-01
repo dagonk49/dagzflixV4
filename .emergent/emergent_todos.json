@@ -1,22 +1,22 @@
 [
   {
-    "content": "Phase 1: Backend FastAPI - Setup, Auth, Media Stream endpoints (Direct Play + HLS + French auto-select)",
+    "content": "Créer la page Onboarding avec questionnaire de goûts (genres favoris, genres détestés, préférences)",
     "status": "in_progress"
   },
   {
-    "content": "Phase 1: Frontend React - Port all components, pages, contexts",
+    "content": "Créer le composant Rating (système d'étoiles pour noter les films/séries)",
     "status": "pending"
   },
   {
-    "content": "Phase 1: Enhanced VideoPlayer - Direct Play, French language, WebVTT subtitles",
+    "content": "Améliorer l'algorithme DagzRank backend pour qu'il soit ultra-performant",
     "status": "pending"
   },
   {
-    "content": "Phase 2: Radarr/Sonarr integration in Setup + Media Detail",
+    "content": "Intégrer les ratings dans MediaDetail et le player",
     "status": "pending"
   },
   {
-    "content": "Phase 2: End-to-end testing with testing agent",
+    "content": "Tester le système complet avec utilisateur 'test' (sans mdp)",
     "status": "pending"
   }
 ]

@@ -1,174 +1,224 @@
-# plan.md
+# plan.md (mis à jour)
 
-## 1) Objectives
-- **Port DagzFlix** from Next.js (App Router + API routes) to **React CRA + FastAPI + MongoDB**.
-- **Zero hardcoding** of service URLs/API keys: everything comes from a **first-run Setup** stored in MongoDB.
-- Deliver a **Netflix-quality Web VideoPlayer** with:
-  - **Direct Play** when browser supports container+codecs (esp. HEVC/H.265)
-  - **Transcode fallback** (HLS) when not supported
-  - **French audio priority**: FRA/FRE > VFQ > otherwise **VO + French subtitles (VOSTFR)**
-  - **Working subtitles** (embedded in MKV) served as **WebVTT** (and selectable)
-  - Progress reporting to Jellyfin + local telemetry
-- Add **Radarr/Sonarr** integrations for requesting content (in addition to Jellyseerr).
+## 1) Objectifs
 
-## 2) Implementation Steps (Phased)
+### Objectifs produit (court terme — V1 avec Jellyfin)
+- **Porter DagzFlix** de Next.js vers **React CRA + FastAPI + MongoDB** (stack FARM).
+- **Zéro hardcoding** : aucune URL / clé API (Jellyfin, TMDB/IMDB, Radarr, Sonarr) dans le code. Tout passe par une **page Setup (premier démarrage)** et est stocké en MongoDB.
+- Livrer un **lecteur Web “Netflix-grade”** :
+  - **Choix intelligent Direct Play vs HLS** (transcodage)
+  - Support **HEVC/H.265** :
+    - Direct Play seulement si le navigateur le supporte réellement
+    - Sinon fallback **HLS transcodé**
+  - **Sélection automatique langue** :
+    - Audio : **FR (FRA/FRE/FR)** puis **VFQ**
+    - Si pas de FR : **VO + sous-titres FR (VOSTFR)**
+  - **Sous-titres MKV** : extraction/serving via Jellyfin et rendu fiable côté navigateur (WebVTT)
+  - **Progress / reprise** : remontée à Jellyfin + télémétrie locale
 
-### Phase 1 — Core Playback POC (isolation; must pass before full port)
-**Goal:** Prove the hardest workflow: `PlaybackInfo → choose DirectPlay vs HLS → pick FR audio/subs → play in browser`.
+### Objectifs produit (moyen/long terme — “Sans Jellyfin”)
+- Préparer une trajectoire pour **remplacer Jellyfin** par un “DagzFlix Media Server” autonome :
+  - Gestion utilisateurs interne (auth, profils, rôles)
+  - **Panel admin complet** (inspiré Jellyfin)
+  - Gestion de bibliothèques **Films / Séries** (indexation, métadonnées, jaquettes)
+  - Pipeline média futur (scan dossiers, transcodage, HLS, sous-titres)
 
-1) **Web research (best-practice quick pass)**
-- Verify Jellyfin endpoints for:
-  - PlaybackInfo usage and fields for direct play/transcode decisions
-  - Direct stream URL formats and required params
-  - Subtitles WebVTT streaming endpoints
-  - HLS + hls.js subtitle track handling
+### Clarifications clés (intégrations)
+- **Recherche** : doit se faire via **TMDB/IMDB** (ou TMDB principalement), **pas** via Radarr/Sonarr.
+- **Radarr/Sonarr** : servent **uniquement** à **demander** le téléchargement (request), pas à rechercher.
 
-2) **Backend POC (FastAPI) — minimal endpoints**
-- `GET /api/setup/check` (returns setupComplete)
-- `POST /api/setup/save` (save Jellyfin/Jellyseerr/Radarr/Sonarr config in MongoDB)
-- `POST /api/auth/login` (Jellyfin AuthenticateByName; create session cookie)
-- `GET /api/media/stream?itemId=...` returns **playback plan**:
-  - `mode`: `direct` or `hls`
-  - `streamUrl`
-  - `mediaSourceId`, `playSessionId`
-  - `audioTracks[]`, `subtitleTracks[]`
-  - `selectedAudioIndex`, `selectedSubtitleIndex`
+### Design
+- Design cible : **Netflix + Apple TV**
+  - Dark-only, **glassmorphism** (blur, transparence), arrondis
+  - Micro-interactions et fluidité (framer-motion)
+  - Respect des règles : pas de `transition: all`, gradients limités (<20% viewport), accessibilité (focus ring).
 
-3) **Codec capability probe (frontend POC)**
-- Implement `getBrowserPlaybackSupport()` using:
-  - `navigator.mediaCapabilities.decodingInfo` when available
+---
+
+## 2) Étapes d’implémentation (par phases)
+
+### Phase 0 — État actuel / travail déjà réalisé (DONE / IN PROGRESS)
+**Backend**
+- ✅ FastAPI initialisé, MongoDB branché (Motor)
+- ✅ Routes majeures déjà présentes (Setup, Auth, Media, Stream, Search/Discover, Request, Proxy, etc.)
+- ✅ Logique serveur de sélection FR/VFQ/VOSTFR déjà implémentée
+- ✅ Génération URL Direct/HLS + WebVTT déjà implémentée
+
+**Frontend**
+- ✅ CRA initialisé (`index.js`, styles de base)
+- ✅ `lib/dagzflix.js` : helper API + cache + `AuthProvider` + `PlayerProvider`
+- ⚠️ `App.js` encore en mode placeholder (à remplacer par routing + pages)
+
+**Guidelines UI**
+- ✅ Design guidelines Netflix/Apple TV disponibles dans `/app/design_guidelines.md`
+
+---
+
+### Phase 1 — Frontend “Foundation” (routing + shell + Setup/Login) (P0)
+**Objectif :** rendre l’app utilisable de bout en bout (Setup → Login → Home).
+
+1) **App shell & routing React Router**
+- Remplacer `App.js` par :
+  - `BrowserRouter` + routes pages
+  - Garde de routes basée sur `AuthProvider.status` (setup/login/ready)
+- Pages V1 : `Setup`, `Login`, `Home`, `Movies`, `Series`, `Search`, `MediaDetail`, `Favorites`, `Player` (overlay/page)
+
+2) **Design tokens & CSS global**
+- Implémenter tokens (variables CSS) dans `index.css` selon `design_guidelines.md`
+- Ajouter utilitaires glass (`glass`, `glass-strong`) cohérents
+- Vérifier :
+  - pas de centrage global `.App { text-align:center }`
+  - pas de `transition: all`
+
+3) **Setup Wizard (first-run)**
+- Formulaire en sections (accordion/wizard) :
+  - Jellyfin URL (+ méthode d’auth selon choix : API key ou login)
+  - TMDB key (et/ou IMDB si prévu)
+  - Radarr (URL+key)
+  - Sonarr (URL+key)
+- Bouton “Tester” : `/api/setup/test`
+- Bouton “Sauvegarder” : `/api/setup/save`
+
+4) **Login page**
+- Auth Jellyfin : `/api/auth/login`
+- Persistance session via cookie + check `/api/auth/session`
+
+**Exit criteria (Phase 1)**
+- Setup → Save → Login → Home (sans erreurs)
+- Aucune URL/clé hardcodée dans le front
+
+---
+
+### Phase 2 — Parcours media complet (browse → detail → play) (P0)
+**Objectif :** navigation type Netflix + pages fonctionnelles.
+
+1) **Composants core UI (réutilisables)**
+- `<PosterCard />` (actions rapides, hover lift, testids)
+- `<MediaRow />` (ScrollArea horizontal + skeleton)
+- `<MediaGrid />` (grille Movies/Series)
+- `<Navbar />` (desktop rail + mobile bottom nav)
+
+2) **Home**
+- Continue Watching : `/api/media/resume`
+- Recos : `/api/recommendations`
+- Discover : `/api/discover`
+
+3) **Movies / Series**
+- Listing via `/api/media/library?type=Movie|Series`
+- Filtres (genres, searchTerm, etc.)
+
+4) **Search (TMDB/IMDB)**
+- Mettre en conformité avec la nouvelle règle :
+  - Recherche prioritaire via **TMDB** (idéalement via une route backend `/api/tmdb/search` ou réutiliser `/api/search` en s’assurant qu’il n’appelle pas Radarr/Sonarr)
+  - Afficher disponibilité locale (mapping TMDB → Jellyfin)
+
+5) **Media Detail**
+- `/api/media/detail`
+- Pour séries : `/api/media/seasons`, `/api/media/episodes`, `/api/media/next-episode`
+- CTA Play + CTA Request (si non dispo)
+
+**Exit criteria (Phase 2)**
+- L’utilisateur peut explorer Home/Movies/Series/Search
+- Ouvrir MediaDetail et lancer la lecture
+
+---
+
+### Phase 3 — Lecteur vidéo “Netflix-grade” (P0)
+**Objectif :** lecteur premium avec détection HEVC et choix Direct/HLS + audio/subs auto.
+
+1) **Détection compatibilité côté client**
+- Implémenter `getBrowserPlaybackSupport()` :
+  - `navigator.mediaCapabilities.decodingInfo` si dispo
   - fallback `video.canPlayType`
-- Decide direct-play feasibility based on:
-  - container support (mp4/webm; mkv usually no)
-  - codec support (hevc/h265 only on Safari; h264 broadly)
+- Envoyer le signal au backend (`hevcSupport=true|false`) pour optimiser PlaybackInfo.
 
-4) **French track auto-selection (backend POC)**
-- Implement scoring for audio/subtitle tracks:
-  - Audio priority: `fra|fre|french` > `fr-ca|vfq|quebec` > default
-  - If no French audio: choose “VO” (non-fr) + best French subtitle (VOSTFR)
-  - Subtitle priority: `forced`(fr) > `fra/fre` > any fr-variant
+2) **Intégration player**
+- Côté React :
+  - Direct: `<video src>`
+  - HLS: hls.js + gestion niveaux ABR
+- Controls overlay :
+  - Play/Pause, seek, volume, fullscreen
+  - Menus audio/subtitles/quality (shadcn Dropdown/Sheet)
+  - Auto-hide (2.5s idle)
+  - Raccourcis clavier (Space, flèches, M, F, S)
 
-5) **Subtitles POC**
-- For `mode=direct`: return `subtitleVttUrl` for selected track + list for menu.
-- For `mode=hls`: confirm subtitles appear via manifest or expose VTT endpoints as fallback.
+3) **Audio/Subtitles**
+- Defaults via backend (`selectedAudioIndex`, `selectedSubtitleIndex`, `languageMode`)
+- Switching : rappeler `/api/media/stream?audioIndex=...&subtitleIndex=...` et recharger source proprement
 
-6) **POC Frontend player page**
-- Simple page: input `itemId` → Play.
-- Support:
-  - HLS via hls.js
-  - Direct stream via `<video src>`
-  - Subtitles via `<track kind="subtitles" src=...>` for direct mode
+4) **Sous-titres MKV**
+- Utiliser `Stream.vtt` via Jellyfin
+- Vérifier rendu : `<track>` pour direct play; pour HLS : manifestSubtitles vtt + fallback VTT externe si nécessaire
 
-**Exit criteria (Phase 1):**
-- At least 1 item plays successfully:
-  - Direct play on Safari-capable HEVC OR direct play H264 on Chrome
-  - Transcode HLS plays on Chrome for HEVC
-  - Auto-select FR audio when present, else VO+FR subs
-  - Subtitle renders in browser
+5) **Progress reporting**
+- Timer (ex: toutes les 10s) → `POST /api/media/progress`
+- Stop/pause events
 
----
-
-### Phase 2 — V1 App Development (full port; MVP)
-**Goal:** Port enough of DagzFlix to support the core user journey end-to-end.
-
-1) **Backend: FastAPI “BFF” port (MVP subset first)**
-- Collections: `config`, `sessions`, `users`, `favorites`, `preferences`, `telemetry`.
-- Endpoints (minimum):
-  - Setup: `check/test/save`
-  - Auth: `login/logout/session`
-  - Media: `library/detail/stream/progress/resume/seasons/episodes/next-episode`
-  - Proxy: Jellyfin images + TMDB images
-  - Search/Discover: minimal parity (search + discover)
-  - Requests: Jellyseerr request + Radarr/Sonarr request (basic)
-
-2) **Frontend: React CRA port (routing + contexts)**
-- React Router pages: `Setup`, `Login`, `Home`, `Movies`, `Series`, `MediaDetail`, `Search`, `Favorites`, `Admin (later)`.
-- Port contexts:
-  - `AuthProvider` (session check + redirects)
-  - `PlayerProvider` (open/close player)
-- Port shared components: `Navbar`, `MediaGrid`, `MediaCard`, `MediaModal`.
-
-3) **Netflix-quality VideoPlayer v1**
-- UX: auto-hide controls, keyboard shortcuts, scrubbing, volume, fullscreen.
-- Quality menu:
-  - HLS levels from hls.js
-  - Direct-play “quality” shows `source` info only
-- Audio/subtitle menu:
-  - Use backend-selected defaults on load
-  - Allow switching (recompute streamUrl or swap track)
-- Progress reporting:
-  - `POST /api/media/progress` every 10s while playing + stop event
-
-4) **Radarr/Sonarr request v1**
-- Setup stores Radarr/Sonarr config.
-- Media detail shows “Request” when not local:
-  - Movies → Radarr
-  - Series → Sonarr (optionally season selection)
-  - Keep Jellyseerr as optional fallback if configured
-
-5) **End-to-end test pass (v1)**
-- Setup → Login → Browse → Detail → Play (direct/hls) → subtitles/audio switching → request.
-
-**User stories (Phase 2)**
-1. As a user, I want a first-run Setup so I can configure Jellyfin/Jellyseerr/Radarr/Sonarr without editing code.
-2. As a user, I want to log in with my Jellyfin account and stay logged in via secure cookies.
-3. As a user, I want playback to automatically choose Direct Play when my browser supports the media.
-4. As a user, I want French audio to be selected automatically, otherwise VO with French subtitles.
-5. As a user, I want to request missing movies/series via Radarr/Sonarr directly from the media page.
+**Exit criteria (Phase 3)**
+- HEVC sur Chrome → HLS fonctionne
+- Contenu compatible → Direct Play fonctionne
+- FR/VFQ/VOSTFR auto fonctionne et menus de switch aussi
+- Sous-titres intégrés MKV visibles
 
 ---
 
-### Phase 3 — Feature Expansion + Hardening
-1) **Full parity port (remaining controllers)**
-- Favorites, ratings, wizard/recommendations, admin telemetry/users.
+### Phase 4 — Requests (Radarr/Sonarr) + statut (P1)
+**Objectif :** demander du contenu manquant sans utiliser Radarr/Sonarr pour la recherche.
 
-2) **Player upgrades (Netflix-like polish)**
-- Better buffering states, seek preview (optional), chapter markers (if available), “Skip intro” (future).
-- Smarter ABR defaults and bandwidth estimation.
+1) **UI Request**
+- Bouton “Demander” visible si `mediaStatus != available`
+- Pour film → Radarr
+- Pour série → Sonarr (option saisons si possible)
 
-3) **Subtitles robustness**
-- Handle embedded ASS/SRT via Jellyfin VTT conversion endpoints.
-- Ensure correct charset + timing; add fallback if HLS subtitle manifest missing.
+2) **Backend**
+- Conserver `/api/media/request` mais :
+  - s’assurer que le workflow “search” UI n’appelle pas Radarr/Sonarr
+  - Radarr/Sonarr uniquement sur action explicite (request)
 
-4) **Requests/status unification**
-- Normalize availability/pending status across Jellyseerr/Radarr/Sonarr.
-
-5) **Testing & regression**
-- Automated smoke checks for core endpoints.
-
-**User stories (Phase 3)**
-1. As a user, I want favorites and continue-watching to persist and load fast.
-2. As a user, I want subtitle styling/selection to be reliable across browsers.
-3. As a user, I want a consistent “available/pending/downloading” badge across all request providers.
-4. As an admin, I want telemetry dashboards to understand watch behavior.
-5. As a user, I want search/discover to feel instant with caching.
+3) **Badges de statut**
+- Harmoniser `available / pending / partial / not_available`
 
 ---
 
-### Phase 4 — Production-readiness
-- Security: origin validation, rate limiting (basic), safer proxying.
-- Observability: structured logs, error IDs.
-- Config migrations + backup/export.
-- Optional: pluggable “no Jellyfin” provider layer (future path).
+### Phase 5 — Hardening + QA + perf (P1)
+- Tests E2E manuels guidés : Setup → Login → Browse → Play (direct/hls) → switch audio/subs → request
+- Tests backend (smoke) : auth/session, media/stream, setup/test
+- Performance : lazy-load images, skeletons, cache API (déjà présent), éviter re-render player
 
-**User stories (Phase 4)**
-1. As a user, I want the app to recover gracefully when Jellyfin is temporarily down.
-2. As a user, I want my config exportable so I can move servers easily.
-3. As a developer, I want services to be modular so I can swap Jellyfin later.
-4. As a user, I want fast startup and minimal loading flashes.
-5. As a user, I want my sessions to remain secure and stable.
+---
 
-## 3) Next Actions (immediate)
-1) Implement Phase 1 POC backend endpoints + Mongo config store.
-2) Implement codec capability probe in frontend.
-3) Implement `/api/media/stream` returning direct-vs-hls plan + FR track selection.
-4) Validate playback (Chrome: HEVC → HLS; Safari: HEVC → direct if supported).
+### Phase 6 — “Sans Jellyfin” (R&D, architecture provider) (P2 / long terme)
+**Objectif :** préparer un remplacement progressif de Jellyfin.
 
-## 4) Success Criteria
-- First-run Setup works; no service URL/API key exists in code.
-- One-click playback works end-to-end with:
-  - correct Direct Play/HLS selection per browser/media
-  - FR audio preferred; otherwise VOSTFR when possible
-  - subtitles render reliably
-  - progress updates recorded
-- Radarr/Sonarr requests succeed when configured.
+1) **Abstraction provider**
+- Introduire une couche `MediaProvider` (JellyfinProvider aujourd’hui)
+- Spécifier les interfaces : auth, library, item detail, playback, subtitles, progress
+
+2) **Auth interne + Admin**
+- Schéma users/roles complet
+- Panel admin (gestion users, bibliothèques, transcodage, stockage)
+
+3) **Gestion bibliothèques**
+- Scanner dossiers (films/séries), mapping TMDB
+- Génération HLS interne + extraction subs
+
+---
+
+## 3) Next Actions (immédiat)
+1) Remplacer `App.js` par le routing + guards (Setup/Login/Home)
+2) Implémenter Setup Wizard (UI) connecté à `/api/setup/*`
+3) Implémenter Login (UI) connecté à `/api/auth/login`
+4) Implémenter le shell de navigation (Netflix/Apple TV)
+5) Démarrer Player V1 (overlay + hls.js + menus)
+
+---
+
+## 4) Critères de succès
+- **Aucun hardcoding** de services (URL/keys)
+- Setup first-run fonctionnel + sessions stables
+- Parcours : Browse → Detail → Play fonctionne
+- Lecture robuste : Direct Play si possible sinon HLS, y compris HEVC
+- Audio FR/VFQ prioritaire sinon VO + subs FR (VOSTFR)
+- Sous-titres MKV rendus correctement
+- Recherche via TMDB/IMDB (pas Radarr/Sonarr)
+- Requests Radarr/Sonarr uniquement à la demande utilisateur
