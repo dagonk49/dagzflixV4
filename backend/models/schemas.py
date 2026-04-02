@@ -10,14 +10,26 @@ from datetime import datetime
 # ══════════════════════════════════════════════════════════════════════════════
 
 class SetupSaveBody(BaseModel):
-    jellyfinUrl: str = Field(..., description="URL du serveur Jellyfin")
-    jellyfinApiKey: str = Field(default="", description="Clé API Jellyfin")
-    jellyseerrUrl: str = Field(default="", description="URL Jellyseerr")
+    """Configuration des services externes - Toutes les clés sont chiffrées en AES-256-GCM"""
+    jellyfinUrl: str = Field(..., description="URL du serveur Jellyfin (requis)", min_length=1, 
+                            pattern=r'^https?://')
+    jellyfinApiKey: str = Field(default="", description="Clé API Jellyfin (optionnelle pour test)")
+    jellyseerrUrl: str = Field(default="", description="URL Jellyseerr (optionnelle)")
     jellyseerrApiKey: str = Field(default="", description="Clé API Jellyseerr")
-    radarrUrl: str = Field(default="", description="URL Radarr")
+    radarrUrl: str = Field(default="", description="URL Radarr (optionnelle)")
     radarrApiKey: str = Field(default="", description="Clé API Radarr")
-    sonarrUrl: str = Field(default="", description="URL Sonarr")
+    sonarrUrl: str = Field(default="", description="URL Sonarr (optionnelle)")
     sonarrApiKey: str = Field(default="", description="Clé API Sonarr")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "jellyfinUrl": "https://jellyfin.example.com",
+                "jellyfinApiKey": "your-api-key-here",
+                "jellyseerrUrl": "https://jellyseerr.example.com",
+                "jellyseerrApiKey": "jellyseerr-api-key"
+            }
+        }
 
 class SetupTestBody(BaseModel):
     type: str = Field(..., description="Type de service à tester")
@@ -25,8 +37,17 @@ class SetupTestBody(BaseModel):
     apiKey: str = Field(default="", description="Clé API")
 
 class LoginBody(BaseModel):
-    username: str = Field(..., description="Nom d'utilisateur Jellyfin")
-    password: str = Field(default="", description="Mot de passe Jellyfin")
+    """Authentification Jellyfin"""
+    username: str = Field(..., description="Nom d'utilisateur Jellyfin", min_length=1, max_length=100)
+    password: str = Field(default="", description="Mot de passe Jellyfin (peut être vide)", max_length=256)
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "username": "test",
+                "password": ""
+            }
+        }
 
 class PreferencesSaveBody(BaseModel):
     favoriteGenres: Optional[List[str]] = Field(default=[], description="Genres favoris")
@@ -35,9 +56,19 @@ class PreferencesSaveBody(BaseModel):
     onboardingComplete: Optional[bool] = Field(default=False, description="Onboarding terminé")
 
 class RatingBody(BaseModel):
-    itemId: str = Field(..., description="ID de l'item à noter")
-    value: int = Field(..., ge=0, le=5, description="Note de 0 à 5")
-    genres: List[str] = Field(default=[], description="Genres de l'item")
+    """Corps de requête pour noter un média"""
+    itemId: str = Field(..., description="ID Jellyfin de l'item à noter", min_length=1)
+    value: int = Field(..., ge=0, le=5, description="Note de 0 à 5 étoiles")
+    genres: List[str] = Field(default=[], description="Genres du média (pour améliorer DagzRank)")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "itemId": "abc123",
+                "value": 5,
+                "genres": ["Action", "Thriller"]
+            }
+        }
 
 class MediaRequestBody(BaseModel):
     mediaType: str = Field(..., description="Type: movie ou tv")

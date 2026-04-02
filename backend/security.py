@@ -278,7 +278,15 @@ class QuantumProofSecurity:
 # INSTANCE GLOBALE
 # ═══════════════════════════════════════════════════════════════════════════
 
-security = QuantumProofSecurity()
+# Initialiser seulement si MASTER_KEY est définie
+# Les tests peuvent définir la clé dans conftest.py avant d'importer
+try:
+    security = QuantumProofSecurity()
+except RuntimeError as e:
+    # En mode test, l'instance sera créée après setup de conftest.py
+    if 'pytest' not in str(e):
+        raise
+    security = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════

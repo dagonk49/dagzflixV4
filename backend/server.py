@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, Request, Response, Cookie, HTTPException, Header
+from fastapi import FastAPI, APIRouter, Request, Response, Cookie, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -8,6 +8,7 @@ from pathlib import Path
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from contextlib import asynccontextmanager
 import os, uuid, logging, httpx, asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Any, Dict
@@ -18,17 +19,49 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MongoDB
+# MongoDB & HTTP Client (Global State)
 # ─────────────────────────────────────────────────────────────────────────────
 mongo_url = os.environ['MONGO_URL']
 db_name   = os.environ.get('DB_NAME', 'dagzflix')
 _client   = AsyncIOMotorClient(mongo_url)
 db        = _client[db_name]
 
+# HTTP Client global (initialisé dans lifespan)
+http_client: httpx.AsyncClient = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Gestion du cycle de vie de l'application
+    Startup: Initialise HTTP client avec connection pooling
+    Shutdown: Ferme proprement HTTP client et MongoDB
+    """
+    global http_client
+    
+    # Startup
+    http_client = httpx.AsyncClient(
+        timeout=httpx.Timeout(30.0, connect=10.0),
+        limits=httpx.Limits(
+            max_connections=100,
+            max_keepalive_connections=20,
+            keepalive_expiry=30.0
+        ),
+        follow_redirects=True,
+        http2=True
+    )
+    logger.info("✅ HTTP Client initialized with connection pooling (HTTP/2)")
+    
+    yield
+    
+    # Shutdown
+    await http_client.aclose()
+    _client.close()
+    logger.info("✅ HTTP Client and MongoDB connections closed")
+
 # ─────────────────────────────────────────────────────────────────────────────
-# FastAPI App with Security
+# FastAPI App with Lifespan & Security
 # ─────────────────────────────────────────────────────────────────────────────
-app        = FastAPI(title='DagzFlix API')
+app        = FastAPI(title='DagzFlix API', version='1.0.0', lifespan=lifespan)
 api_router = APIRouter(prefix='/api')
 
 # Rate Limiter (Protection DDoS)
@@ -64,6 +97,21 @@ async def add_security_headers(request: Request, call_next):
         "script-src 'self' 'unsafe-inline' 'unsafe-eval'",  # React needs unsafe-eval
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src 'self' https://fonts.gstatic.com",
+
+def get_http_client() -> httpx.AsyncClient:
+    """
+    Retourne le client HTTP global avec connection pooling
+    
+    Usage:
+        client = get_http_client()
+        response = await client.get(url)
+    
+    Note: Ne PAS utiliser 'async with' - le client est géré par lifespan
+    """
+    if http_client is None:
+        raise RuntimeError("HTTP client not initialized. Check lifespan configuration.")
+    return http_client
+
         "img-src 'self' data: https: blob:",
         "media-src 'self' blob: https:",
         "connect-src 'self' https:",
@@ -116,9 +164,17 @@ async def verify_csrf_token(request: Request, x_csrf_token: Optional[str] = Head
     """
     Vérifie le token CSRF pour les requêtes POST/PUT/DELETE
     CRITICAL: Protection contre les attaques CSRF
+    
+    Usage comme dépendance FastAPI:
+        @app.post("/api/some-route", dependencies=[Depends(verify_csrf_token)])
     """
     # Skip CSRF pour les routes publiques (login, setup)
-    if request.url.path in ['/api/auth/login', '/api/setup/save', '/api/setup/test']:
+    public_routes = ['/api/auth/login', '/api/setup/save', '/api/setup/test']
+    if request.url.path in public_routes:
+        return True
+    
+    # Skip CSRF pour les méthodes GET (lecture seule)
+    if request.method == 'GET':
         return True
     
     session = await get_session(request)
@@ -126,14 +182,14 @@ async def verify_csrf_token(request: Request, x_csrf_token: Optional[str] = Head
         raise HTTPException(status_code=401, detail="Session invalide")
     
     if not x_csrf_token:
-        raise HTTPException(status_code=403, detail="Token CSRF manquant")
+        raise HTTPException(status_code=403, detail="Token CSRF manquant dans header X-CSRF-Token")
     
     stored_csrf = session.get('csrfToken')
     if not stored_csrf or not security.verify_csrf_token(x_csrf_token, session['_id']):
         security.log_security_event(
             'CSRF_VERIFICATION_FAILED',
             session.get('userId', 'unknown'),
-            {'ip': request.client.host, 'path': request.url.path},
+            {'ip': request.client.host, 'path': request.url.path, 'method': request.method},
             severity='WARNING',
             ip_address=request.client.host
         )

@@ -1,34 +1,30 @@
 [
   {
-    "content": "CRITIQUE: Rendre MASTER_KEY obligatoire au démarrage (fail si absente)",
+    "content": "Cibler exceptions spécifiques (httpx.HTTPStatusError, ValueError) + logs détaillés",
     "status": "completed"
   },
   {
-    "content": "CRITIQUE: Implémenter vérification CSRF sur toutes les routes POST/PUT/DELETE",
+    "content": "Créer dépendance FastAPI globale pour CSRF verification",
     "status": "completed"
   },
   {
-    "content": "CRITIQUE: Uniformiser cookies (secure=True, samesite=strict)",
+    "content": "Intégrer lifespan dans server.py (fermeture propre AsyncClient + MongoDB)",
     "status": "completed"
   },
   {
-    "content": "ARCHITECTURE: Restructurer en routes/, models/, services/, config/",
-    "status": "in_progress"
-  },
-  {
-    "content": "PERFORMANCE: Implémenter httpx connection pooling avec lifespan",
+    "content": "Ajouter docstrings complètes aux fonctions complexes",
     "status": "completed"
   },
   {
-    "content": "CLEAN CODE: Ajouter response_model Pydantic partout",
-    "status": "pending"
+    "content": "Enrichir schemas.py avec Field(description, ge, le) pour auto-doc Swagger",
+    "status": "completed"
   },
   {
-    "content": "CLEAN CODE: Cibler les exceptions spécifiques (httpx.HTTPStatusError)",
-    "status": "pending"
+    "content": "Créer .env.example pour faciliter déploiement",
+    "status": "completed"
   },
   {
-    "content": "Créer un README.md complet avec documentation architecture",
-    "status": "pending"
+    "content": "Créer tests/ avec tests unitaires (pytest)",
+    "status": "completed"
   }
 ]
