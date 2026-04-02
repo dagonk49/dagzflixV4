@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, Request, Response, Cookie, HTTPException
+from fastapi import FastAPI, APIRouter, Request, Response, Cookie, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -112,9 +112,50 @@ async def get_session(request: Request):
     
     return session
 
+async def verify_csrf_token(request: Request, x_csrf_token: Optional[str] = Header(None)):
+    """
+    Vérifie le token CSRF pour les requêtes POST/PUT/DELETE
+    CRITICAL: Protection contre les attaques CSRF
+    """
+    # Skip CSRF pour les routes publiques (login, setup)
+    if request.url.path in ['/api/auth/login', '/api/setup/save', '/api/setup/test']:
+        return True
+    
+    session = await get_session(request)
+    if not session:
+        raise HTTPException(status_code=401, detail="Session invalide")
+    
+    if not x_csrf_token:
+        raise HTTPException(status_code=403, detail="Token CSRF manquant")
+    
+    stored_csrf = session.get('csrfToken')
+    if not stored_csrf or not security.verify_csrf_token(x_csrf_token, session['_id']):
+        security.log_security_event(
+            'CSRF_VERIFICATION_FAILED',
+            session.get('userId', 'unknown'),
+            {'ip': request.client.host, 'path': request.url.path},
+            severity='WARNING',
+            ip_address=request.client.host
+        )
+        raise HTTPException(status_code=403, detail="Token CSRF invalide")
+    
+    return True
+
+
 def set_cookie(response: Response, name: str, value: str, max_age: int = 0):
-    response.set_cookie(name, value, max_age=max_age, httponly=True,
-                        samesite='lax', secure=False, path='/')
+    """
+    Configure un cookie sécurisé avec les meilleures pratiques
+    CRITICAL: secure=True (HTTPS only), samesite='strict' (anti-CSRF)
+    """
+    response.set_cookie(
+        name, 
+        value, 
+        max_age=max_age, 
+        httponly=True,
+        samesite='strict', 
+        secure=True,  # HTTPS uniquement (production)
+        path='/'
+    )
 
 TMDB_GENRE_ID_TO_NAME = {
     12:'Adventure',14:'Fantasy',16:'Animation',18:'Drama',27:'Horror',

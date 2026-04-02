@@ -44,20 +44,26 @@ class QuantumProofSecurity:
     
     def _get_or_create_master_key(self) -> bytes:
         """
-        Génère ou récupère la master key depuis les variables d'environnement
-        CRITICAL: Cette clé doit être stockée de manière ultra-sécurisée en production
+        Récupère la master key depuis les variables d'environnement
+        CRITICAL: Cette clé DOIT être définie - l'application refuse de démarrer sinon
         """
         master_key_b64 = os.environ.get('DAGZFLIX_MASTER_KEY')
         
         if not master_key_b64:
-            # Génération d'une nouvelle clé 256-bit
-            master_key = AESGCM.generate_key(bit_length=256)
-            master_key_b64 = base64.b64encode(master_key).decode('utf-8')
-            logger.warning(f"⚠️  NOUVELLE MASTER KEY GÉNÉRÉE - SAUVEGARDEZ-LA: {master_key_b64}")
-            logger.warning("⚠️  Ajoutez DAGZFLIX_MASTER_KEY à votre .env en production!")
-            return master_key
+            logger.critical("🚨 ERREUR FATALE: DAGZFLIX_MASTER_KEY n'est pas définie !")
+            logger.critical("🚨 L'application ne peut pas démarrer sans cette clé.")
+            logger.critical("🚨 Générez-en une avec: python -c \"from cryptography.hazmat.primitives.ciphers.aead import AESGCM; import base64; print(base64.b64encode(AESGCM.generate_key(bit_length=256)).decode())\"")
+            raise RuntimeError(
+                "DAGZFLIX_MASTER_KEY est requise pour démarrer l'application. "
+                "Sans elle, toutes les données chiffrées deviendraient inutilisables après redémarrage. "
+                "Définissez cette variable d'environnement avant de lancer le serveur."
+            )
         
-        return base64.b64decode(master_key_b64)
+        try:
+            return base64.b64decode(master_key_b64)
+        except Exception as e:
+            logger.critical(f"🚨 ERREUR: DAGZFLIX_MASTER_KEY invalide - {e}")
+            raise RuntimeError(f"DAGZFLIX_MASTER_KEY est invalide: {e}")
     
     # ═══════════════════════════════════════════════════════════════════════
     # CHIFFREMENT AES-256-GCM (Authenticated Encryption)

@@ -1,30 +1,34 @@
 [
   {
-    "content": "Implémenter le chiffrement AES-256-GCM pour les données sensibles (API keys, tokens)",
+    "content": "CRITIQUE: Rendre MASTER_KEY obligatoire au démarrage (fail si absente)",
     "status": "completed"
   },
   {
-    "content": "Ajouter la cryptographie post-quantique (CRYSTALS-Kyber + Dilithium)",
+    "content": "CRITIQUE: Implémenter vérification CSRF sur toutes les routes POST/PUT/DELETE",
     "status": "completed"
   },
   {
-    "content": "Implémenter rate limiting & protection CSRF/XSS",
+    "content": "CRITIQUE: Uniformiser cookies (secure=True, samesite=strict)",
     "status": "completed"
   },
   {
-    "content": "Ajouter Content Security Policy & headers de sécurité",
-    "status": "completed"
-  },
-  {
-    "content": "Implémenter système d'audit de sécurité & logs",
-    "status": "completed"
-  },
-  {
-    "content": "Configurer sessions sécurisées avec rotation automatique",
-    "status": "completed"
-  },
-  {
-    "content": "Tester l'application complète avec sécurité activée",
+    "content": "ARCHITECTURE: Restructurer en routes/, models/, services/, config/",
     "status": "in_progress"
+  },
+  {
+    "content": "PERFORMANCE: Implémenter httpx connection pooling avec lifespan",
+    "status": "completed"
+  },
+  {
+    "content": "CLEAN CODE: Ajouter response_model Pydantic partout",
+    "status": "pending"
+  },
+  {
+    "content": "CLEAN CODE: Cibler les exceptions spécifiques (httpx.HTTPStatusError)",
+    "status": "pending"
+  },
+  {
+    "content": "Créer un README.md complet avec documentation architecture",
+    "status": "pending"
   }
 ]
